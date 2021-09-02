@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
 import sys
-import bpy
+import bpy, bmesh
 import numpy as np
 from random import choices, seed, uniform
+from mathutils.bvhtree import BVHTree
 import colorsys
+import os
 
 """
 This script separates each of the capybaras in the provided source file.
@@ -18,89 +20,143 @@ if __name__ != "__main__":
 
 seed()
 
-CAPY_ID_SUFFIX = "Cube."
-objs = set(bpy.data.objects)
+# Determine where items should be placed on the capybaras
+accessory_relative_locations = {}
 
-occ = {}
-most_common_z_pos, most_occ = 0.00, 0
+for capybara in filter(lambda x: "Capybara" in x.name, bpy.data.objects):
+    break
 
-for obj in objs:
-    z = round(obj.location[2], 1)
+# TODO: Remove light
+parts = {
+    "Base Capybara",
+    "Base Capybara Eye(left)",
+    "Base Capybara Eye(right)",
+    "Base Capybara Nose",
+    "Light",
+}
 
-    if z not in occ:
-        occ[z] = 0
+capybara = bpy.data.objects["Base Capybara"]
+eye = bpy.data.objects["Base Capybara Eye(left)"]
 
-    occ[z] += 1
-
-    if occ[z] > most_occ:
-        most_common_z_pos = z
-        most_occ = occ[z]
+capybaras = filter(
+    lambda obj: obj.name == "Base Capybara" or "capybara" in obj.name, bpy.data.objects
+)
 
 for obj in bpy.context.selected_objects:
     obj.select_set(False)
 
-# Capybaras are only the ones with the specified prefix.
-# Customize each one and export to GLB
-for capybara in filter(
-    lambda obj: CAPY_ID_SUFFIX in obj.name
-    and abs(most_common_z_pos - obj.location[2]) < 1,
-    objs,
-):
-    # BEGIN BASE COAT COLOR RANDOMIZATION
+for obj in bpy.data.objects:
+    obj.hide_set(obj.name not in parts)
 
-    # Calculate the most common material to find the fur material
-    material_occurrences = {}
-    most_common, most_occ = None, 0
+# BEGIN BASE COAT COLOR RANDOMIZATION
 
-    for f in capybara.data.polygons:
-        mat_idx = f.material_index
+# Calculate the most common material to find the fur material
+material_occurrences = {}
+most_common, most_occ = None, 0
 
-        if mat_idx not in material_occurrences:
-            material_occurrences[mat_idx] = 0
+for f in capybara.data.polygons:
+    mat_idx = f.material_index
 
-        material_occurrences[mat_idx] += 1
+    if mat_idx not in material_occurrences:
+        material_occurrences[mat_idx] = 0
 
-        if (curr_occ := material_occurrences[mat_idx]) > most_occ:
-            most_occ = curr_occ
-            most_common = mat_idx
+    material_occurrences[mat_idx] += 1
 
-    # SUS
-    if "ColorRamp" not in capybara.material_slots[most_common].material.node_tree.nodes:
-        continue
+    if (curr_occ := material_occurrences[mat_idx]) > most_occ:
+        most_occ = curr_occ
+        most_common = mat_idx
 
-    base_coat_colors = (
-        capybara.material_slots[most_common]
-        .material.node_tree.nodes["ColorRamp"]
-        .color_ramp
+base_coat_colors = (
+    capybara.material_slots[most_common]
+    .material.node_tree.nodes["ColorRamp"]
+    .color_ramp
+)
+
+# Determine where to place all accessories on the capybaras
+# The different types of accessories, each type containing items that cannot be placed on the same capybara
+# at the same time because they would overlap
+accessory_relative_locs = {}
+accessory_sets = []
+
+all_accessories = list(
+    filter(
+        lambda obj: hasattr(obj.data, "polygons")
+        and obj.name not in parts
+        and "capybara" not in obj.name
+        and (
+            len(obj.data.polygons) != len(eye.data.polygons)
+            or len(obj.data.vertices) != len(eye.data.vertices)
+            or len(obj.data.edges) != len(eye.data.edges)
+        ),
+        bpy.data.objects,
     )
+)
 
-    # Generate 16 different colors per capy
-    for i in range(16):
-        # Uniform distribution of colors, but VERY rare translucent capybaras
-        hsv = [
-            np.random.beta(a=400, b=400) - 0.48,
-            np.random.beta(a=65, b=30),
-            np.random.beta(a=7, b=40),
-        ]
-        a = choices([1.0, 0.6], [0.95, 0.05])[0]
-        base_coat_colors.elements[0].color = (*colorsys.hsv_to_rgb(*hsv), a)
+for base in capybaras:
+    for accessory in all_accessories:
+        # Check that the accessory is actually on a capybara, and get the capybara it's on
+        if accessory.location[1] > base.location[1] + 1.00:
+            continue
+        elif base.location[1] - base.location[1] - 0.15 > 0:
+            continue
 
-        print(list(hsv))
+        relative_loc = accessory.location[1] - base.location[1]
+        accessory_relative_locs[accessory.name] = relative_loc
 
-        # All animals have a difuse
+        # Re-position the accessory
+        accessory.location.y = capybara.location[1] + relative_loc
+        abs_loc = accessory.matrix_world
 
-        hsv[1] -= 0.05
-        hsv[2] -= 0.1
+        all_accessories.remove(accessory)
+        found_set = False
 
-        base_coat_colors.elements[1].color = (*colorsys.hsv_to_rgb(*hsv), a)
+        bmh = bmesh.new()
+        bmh.from_mesh(accessory.data)
+        bmh.transform(abs_loc)
 
-        print(list(hsv))
+        bvh_tree = BVHTree.FromBMesh(bmh)
 
-        # Export the capybara to a GLB
-        capybara.select_set(True)
-        # bpy.ops.export_scene.gltf(filepath=f"out/{capybara.name}_{''.join([str(i) for i in hsv])}.glb", use_selection=True, export_materials="EXPORT")
-        # bpy.ops.wm.save_as_mainfile(filepath="/home/dowlandaiello/hi.blend")
-        # capybara.select_set(False)
+        # See if this accessory would overlap with an accessory in the set. If so, insert it in that set
+        for (crit_tree, acc_set) in accessory_sets:
+            if found_set := len(bvh_tree.overlap(crit_tree)) > 0:
+                acc_set.append(accessory.name)
 
-        break
-    break
+        if not found_set:
+            accessory_sets.append((bvh_tree, [accessory.name]))
+
+for (acc_set, set_members) in accessory_sets[:3]:
+    bpy.data.objects[set_members[0]].hide_set(False)
+
+bpy.context.scene.render.filepath = "/home/dowlandaiello/Downloads/hmm.png"
+bpy.ops.render.render(animation=False, use_viewport=True, write_still=True)
+
+sys.exit(0)
+
+# Generate 16 different colors per capy
+for i in range(16):
+    # Uniform distribution of colors, but VERY rare translucent capybaras
+    hsv = [
+        np.random.beta(a=400, b=400) - 0.48,
+        np.random.beta(a=65, b=30),
+        np.random.beta(a=7, b=40),
+    ]
+    a = choices([1.0, 0.6], [0.95, 0.05])[0]
+
+    base_coat_colors.elements[1].color = (*colorsys.hsv_to_rgb(*hsv), a)
+
+    print(list(hsv))
+
+    # All animals have a difuse
+
+    hsv[1] -= 0.05
+    hsv[2] -= 0.075
+
+    base_coat_colors.elements[0].color = (*colorsys.hsv_to_rgb(*hsv), a)
+
+    print(list(hsv))
+
+    # Export the capybara to a GLB
+    capybara.select_set(True)
+    # bpy.ops.export_scene.gltf(filepath=f"out/{capybara.name}_{''.join([str(i) for i in hsv])}.glb", use_selection=True, export_materials="EXPORT")
+    # bpy.ops.wm.save_as_mainfile(filepath="/home/dowlandaiello/hi.blend")
+    # capybara.select_set(False)
