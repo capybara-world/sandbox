@@ -23,9 +23,6 @@ seed()
 # Determine where items should be placed on the capybaras
 accessory_relative_locations = {}
 
-for capybara in filter(lambda x: "Capybara" in x.name, bpy.data.objects):
-    break
-
 # TODO: Remove light
 parts = {
     "Base Capybara",
@@ -47,6 +44,7 @@ for obj in bpy.context.selected_objects:
 
 for obj in bpy.data.objects:
     obj.hide_set(obj.name not in parts)
+    obj.hide_render = obj.name not in parts
 
 # BEGIN BASE COAT COLOR RANDOMIZATION
 
@@ -82,7 +80,7 @@ all_accessories = list(
     filter(
         lambda obj: hasattr(obj.data, "polygons")
         and obj.name not in parts
-        and "capybara" not in obj.name
+        and "capybara" not in obj.name.lower()
         and (
             len(obj.data.polygons) != len(eye.data.polygons)
             or len(obj.data.vertices) != len(eye.data.vertices)
@@ -91,13 +89,26 @@ all_accessories = list(
         bpy.data.objects,
     )
 )
+used_accessories = set()
 
 for base in capybaras:
+    bmhcapy = bmesh.new()
+    bmhcapy.from_mesh(base.data)
+    bmhcapy.transform(base.matrix_world)
+
+    capy_tree = BVHTree.FromBMesh(bmhcapy)
+
     for accessory in all_accessories:
+        poly_count = len(accessory.data.polygons) + len(accessory.data.vertices) + len(accessory.data.edges)
+
+        bmh = bmesh.new()
+        bmh.from_mesh(accessory.data)
+        bmh.transform(accessory.matrix_world)
+
         # Check that the accessory is actually on a capybara, and get the capybara it's on
-        if accessory.location[1] > base.location[1] + 1.00:
+        if len(BVHTree.FromBMesh(bmh).overlap(capy_tree)) == 0:
             continue
-        elif base.location[1] - base.location[1] - 0.15 > 0:
+        elif poly_count in used_accessories:
             continue
 
         relative_loc = accessory.location[1] - base.location[1]
@@ -105,13 +116,14 @@ for base in capybaras:
 
         # Re-position the accessory
         accessory.location.y = capybara.location[1] + relative_loc
+        bpy.context.view_layer.update()
         abs_loc = accessory.matrix_world
 
         all_accessories.remove(accessory)
+        used_accessories.add(poly_count)
+
         found_set = False
 
-        bmh = bmesh.new()
-        bmh.from_mesh(accessory.data)
         bmh.transform(abs_loc)
 
         bvh_tree = BVHTree.FromBMesh(bmh)
@@ -121,14 +133,22 @@ for base in capybaras:
             if found_set := len(bvh_tree.overlap(crit_tree)) > 0:
                 acc_set.append(accessory.name)
 
+                break
+
         if not found_set:
             accessory_sets.append((bvh_tree, [accessory.name]))
 
-for (acc_set, set_members) in accessory_sets[:3]:
-    bpy.data.objects[set_members[0]].hide_set(False)
+for (i, (acc_set, set_members)) in enumerate(accessory_sets):
+    for mem in set_members:
+        bpy.data.objects[mem].hide_set(False)
+        bpy.data.objects[mem].hide_render = False
 
-bpy.context.scene.render.filepath = "/home/dowlandaiello/Downloads/hmm.png"
-bpy.ops.render.render(animation=False, use_viewport=True, write_still=True)
+    bpy.context.scene.render.filepath = f"/home/dowlandaiello/Downloads/hmm{i}.png"
+    bpy.ops.render.render(animation=False, use_viewport=False, write_still=True)
+
+    for mem in set_members:
+        bpy.data.objects[mem].hide_set(True)
+        bpy.data.objects[mem].hide_render = True
 
 sys.exit(0)
 
