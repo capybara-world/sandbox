@@ -5,14 +5,27 @@ import bpy, bmesh
 import numpy as np
 from random import choices, seed, uniform
 from mathutils.bvhtree import BVHTree
+from mathutils import Vector
 import colorsys
 import os
 
-"""
-This script separates each of the capybaras in the provided source file.
 
-    ./separate_capybaras 'Cube.'
-"""
+def geo_mesh_center(obj):
+    x, y, z = [sum([v.co[i] for v in obj.data.vertices]) for i in range(3)]
+    count = float(len(obj.data.vertices))
+    center = obj.matrix_world @ (Vector((x, y, z )) / count)
+
+    return center
+
+
+def polies_inside_of(mesh, bbox):
+    def get_quartile(quartile):
+        return [quartile([corner[i] for corner in bbox]) for i in range(3)]
+
+    maxs, mins = get_quartile(max), get_quartile(min)
+
+    return len(list(filter(lambda v : all([mins[i] < pos < maxs[i] for i, pos in enumerate(v.co)]), mesh.vertices)))
+
 
 # This file cannot be used as a module
 if __name__ != "__main__":
@@ -35,9 +48,9 @@ parts = {
 capybara = bpy.data.objects["Base Capybara"]
 eye = bpy.data.objects["Base Capybara Eye(left)"]
 
-capybaras = filter(
-    lambda obj: obj.name == "Base Capybara" or "capybara" in obj.name, bpy.data.objects
-)
+capybaras = list(filter(
+    lambda obj: obj.name == "Base Capybara" or "capybara" in obj.name.lower(), bpy.data.objects
+))
 
 for obj in bpy.context.selected_objects:
     obj.select_set(False)
@@ -89,54 +102,49 @@ all_accessories = list(
         bpy.data.objects,
     )
 )
-used_accessories = set()
 
-for base in capybaras:
-    bmhcapy = bmesh.new()
-    bmhcapy.from_mesh(base.data)
-    bmhcapy.transform(base.matrix_world)
+# The geometric positions of all capybaras
+capy_geo_pos = {}
 
-    capy_tree = BVHTree.FromBMesh(bmhcapy)
+for accessory in all_accessories:
+    # Determine which capybara the accessory is on
+    most_likely_base = (None, 0.00)
 
-    for accessory in all_accessories:
-        poly_count = len(accessory.data.polygons) + len(accessory.data.vertices) + len(accessory.data.edges)
+    # Find the distance between center of capy geometry and accessory geometry
+    acc_geo_pos = geo_mesh_center(accessory)
 
-        bmh = bmesh.new()
-        bmh.from_mesh(accessory.data)
-        bmh.transform(accessory.matrix_world)
+    for base in capybaras:
+        if base not in capy_geo_pos:
+            capy_geo_pos[base] = geo_mesh_center(base)
 
-        # Check that the accessory is actually on a capybara, and get the capybara it's on
-        if len(BVHTree.FromBMesh(bmh).overlap(capy_tree)) == 0:
-            continue
-        elif poly_count in used_accessories:
-            continue
+        if (dist_acc_base := abs((capy_geo_pos[base] - acc_geo_pos).length)) < most_likely_base[1] or most_likely_base[0] is None and dist_acc_base < 10.0:
+            most_likely_base = (base, dist_acc_base)
 
-        relative_loc = accessory.location[1] - base.location[1]
-        accessory_relative_locs[accessory.name] = relative_loc
+    # Extraneous objects not part of the capybara accessories
+    if most_likely_base[0] is None:
+        continue
 
-        # Re-position the accessory
-        accessory.location.y = capybara.location[1] + relative_loc
-        bpy.context.view_layer.update()
-        abs_loc = accessory.matrix_world
+    base = most_likely_base[0]
 
-        all_accessories.remove(accessory)
-        used_accessories.add(poly_count)
+    relative_loc = accessory.location[1] - base.location[1]
+    accessory_relative_locs[accessory.name] = relative_loc
 
-        found_set = False
+    # Re-position the accessory
+    accessory.location.y = capybara.location[1] + relative_loc
+    bpy.context.view_layer.update()
+    abs_loc = accessory.matrix_world
 
-        bmh.transform(abs_loc)
+    found_set = False
 
-        bvh_tree = BVHTree.FromBMesh(bmh)
+    # See if this accessory would overlap with an accessory in the set. If so, insert it in that set
+    for (crit_bbox, acc_set) in accessory_sets:
+        if found_set := polies_inside_of(accessory.data, crit_bbox) > 20:
+            acc_set.append(accessory.name)
 
-        # See if this accessory would overlap with an accessory in the set. If so, insert it in that set
-        for (crit_tree, acc_set) in accessory_sets:
-            if found_set := len(bvh_tree.overlap(crit_tree)) > 0:
-                acc_set.append(accessory.name)
+            break
 
-                break
-
-        if not found_set:
-            accessory_sets.append((bvh_tree, [accessory.name]))
+    if not found_set:
+        accessory_sets.append((accessory.bound_box, [accessory.name]))
 
 for (i, (acc_set, set_members)) in enumerate(accessory_sets):
     for mem in set_members:
