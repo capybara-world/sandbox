@@ -94,24 +94,30 @@ all_accessories = list(
     )
 )
 
-# The geometric positions of all capybaras
-capy_geo_pos = {}
+# The BVH trees of all capybaras, which with an item must intersect in order to be its child
+capy_trees = {}
 
 for accessory in all_accessories:
     # Determine which capybara the accessory is on
     most_likely_base = (None, 0.00)
 
     # Find the distance between center of capy geometry and accessory geometry
-    acc_geo_pos = geo_mesh_center(accessory)
+    bmh = bmesh.new()
+    bmh.from_mesh(accessory.data)
+    bmh.transform(accessory.matrix_world)
+
+    bvh_tree_pre_norm = BVHTree.FromBMesh(bmh)
 
     for base in capybaras:
-        if base not in capy_geo_pos:
-            capy_geo_pos[base] = geo_mesh_center(base)
+        if base not in capy_trees:
+            capy_bmh = bmesh.new()
+            capy_bmh.from_mesh(base.data)
+            capy_bmh.transform(base.matrix_world)
 
-        if (dist_acc_base := abs((capy_geo_pos[base] - acc_geo_pos).length)) < most_likely_base[1] or most_likely_base[0] is None and dist_acc_base < 10.0:
+            capy_trees[base] = BVHTree.FromBMesh(capy_bmh)
+
+        if (likelihood := (bvh_tree_pre_norm.overlap(capy_trees[base]))) < most_likely_base[1] or most_likely_base[0] is None and likelihood > 0:
             most_likely_base = (base, dist_acc_base)
-
-    print(most_likely_base)
 
     # Extraneous objects not part of the capybara accessories
     if most_likely_base[0] is None:
