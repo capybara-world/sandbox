@@ -20,9 +20,6 @@ def geo_mesh_center(o):
 def main():
     seed()
 
-    # Determine where items should be placed on the capybaras
-    accessory_relative_locations = {}
-
     # TODO: Remove light
     parts = {
         "Base Capybara",
@@ -40,6 +37,14 @@ def main():
     ))
 
     for obj in bpy.data.objects:
+        # Normalize all locations to their geometric centers
+        for o in bpy.context.selected_objects:
+            o.select_set(False)
+        obj.select_set(True)
+
+        bpy.context.scene.cursor.location = geo_mesh_center(obj)
+        bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
+
         obj.select_set(False)
         obj.hide_set(obj.name not in parts)
         obj.hide_render = obj.name not in parts
@@ -100,11 +105,11 @@ def main():
         most_likely_base = (None, 0.00)
 
         # Find the distance between the center of capy geometry and accessory geometry
-        acc_geo_pos = geo_mesh_center(accessory)
+        acc_geo_pos = accessory.location
 
         for base in capybaras:
             if base not in capy_geo_pos:
-                capy_geo_pos[base] = geo_mesh_center(base)
+                capy_geo_pos[base] = base.location
 
             dist = abs(capy_geo_pos[base][1] - acc_geo_pos[1])
 
@@ -128,7 +133,7 @@ def main():
 
         set_x_disps = []
 
-        acc_geo_pos = geo_mesh_center(accessory)
+        acc_geo_pos = accessory.location
 
         # See if this accessory would overlap with an accessory in the set. If so, insert it in that set
         for i, (pos, acc_set) in enumerate(accessory_sets):
