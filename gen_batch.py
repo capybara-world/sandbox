@@ -176,7 +176,7 @@ def main():
     bpy.data.objects["Light"].hide_set(False)
     bpy.data.objects["Light"].hide_render = False
 
-    wh, ws, wv = colorsys.rgb_to_hsv(*bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value)
+    wh, ws, wv = colorsys.rgb_to_hsv(*bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value[:-1])
 
     # Generate 16 different colors per capy
     for i in range(16):
@@ -201,6 +201,9 @@ def main():
 
         start = time.time()
         print(f"GENERATING HAT COMBINATIONS FOR COLOR {i}")
+
+        bpy.data.objects["Cylinder"].hide_set(False)
+        bpy.data.objects["Cylinder"].hide_render = False
 
         # Generate all possible combinations of accessories
         for j, acc_name in enumerate(accessory_sets[0][1]):
