@@ -200,21 +200,27 @@ def main():
         print(f"GENERATING HAT COMBINATIONS FOR COLOR {i}")
 
         # Generate all possible combinations of accessories
-        for j, acc in enumerate(accessory_sets[0]):
+        for j, acc_name in enumerate(accessory_sets[0][1]):
+            acc = bpy.data.objects[acc_name]
+
             acc.hide_set(False)
             acc.hide_render = False
 
             start = time.time()
             print(f"GENERATING MIDDLE ACC COMBINATIONS FOR HAT {j}")
 
-            for k, secondary in enumerate(accessory_sets[1]):
+            for k, secondary_name in enumerate(accessory_sets[1][1]):
+                secondary = bpy.data.objects[secondary_name]
+
                 secondary.hide_set(False)
                 secondary.hide_render = False
 
                 start = time.time()
                 print(f"GENERATING FINAL ACC COMBINATIONS FOR MIDDLE {k}")
 
-                for l, tertiary in enumerate(accessory_sets[2]):
+                for l, tertiary_name in enumerate(accessory_sets[2][1]):
+                    tertiary = bpy.data.objects[tertiary_name]
+
                     tertiary.hide_set(False)
                     tertiary.hide_render = False
 
