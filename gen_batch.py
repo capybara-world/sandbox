@@ -2,6 +2,8 @@
 
 import sys
 import bpy, bmesh
+from threading import Thread
+import time
 import numpy as np
 from random import choices, seed, uniform
 from mathutils.bvhtree import BVHTree
@@ -20,13 +22,15 @@ def geo_mesh_center(o):
 def main():
     seed()
 
+    start = time.time()
+    print("IDENTIFYING COMPONENTS")
+
     # TODO: Remove light
     parts = {
         "Base Capybara",
         "Base Capybara Eye(left)",
         "Base Capybara Eye(right)",
         "Base Capybara Nose",
-    #    "Light",
     }
 
     capybara = bpy.data.objects["Base Capybara"]
@@ -35,6 +39,11 @@ def main():
     capybaras = list(filter(
         lambda obj: obj.name == "Base Capybara" or "capybara" in obj.name.lower() and "eye" not in obj.name.lower() and "nose" not in obj.name.lower(), bpy.data.objects
     ))
+
+    print(f"DONE (took {time.time() - start}s)")
+
+    start = time.time()
+    print("NORMALIZING COMPONENT ORIGINS")
 
     for obj in bpy.data.objects:
         # Normalize all locations to their geometric centers
@@ -48,6 +57,8 @@ def main():
         obj.select_set(False)
         obj.hide_set(obj.name not in parts)
         obj.hide_render = obj.name not in parts
+
+    print(f"DONE (took {time.time() - start}s)")
 
     # BEGIN BASE COAT COLOR RANDOMIZATION
 
@@ -79,6 +90,9 @@ def main():
     accessory_relative_locs = {}
     accessory_sets = []
 
+    start = time.time()
+    print("IDENTIFYING ACCESSORIES")
+
     all_accessories = list(
         filter(
             lambda obj: hasattr(obj.data, "polygons")
@@ -97,8 +111,13 @@ def main():
     for obj in all_accessories:
         obj.hide_set(False)
 
+    print(f"DONE (took {time.time() - start}s)")
+
     # The BVH trees of all capybaras, which with an item must intersect in order to be its child
     capy_geo_pos = {}
+
+    start = time.time()
+    print("GENERATING ACCESSORY SETS")
 
     for accessory in all_accessories:
         # Determine which capybara the accessory is on
@@ -148,19 +167,13 @@ def main():
         except (ValueError, AssertionError):
             accessory_sets.append((acc_geo_pos, [accessory.name]))
 
-    for (i, (acc_set, set_members)) in enumerate(accessory_sets):
-        for mem in set_members:
-            bpy.data.objects[mem].hide_set(False)
-            bpy.data.objects[mem].hide_render = False
+    print(f"DONE (took {time.time() - start}s)")
 
-        bpy.context.scene.render.filepath = f"/home/dowlandaiello/Downloads/hmm{i}.png"
-        bpy.ops.render.render(animation=False, use_viewport=False, write_still=True)
+    start = time.time()
+    print("GENERATING CAPYBARAS")
 
-        for mem in set_members:
-            bpy.data.objects[mem].hide_set(True)
-            bpy.data.objects[mem].hide_render = True
-
-    raise Exception()
+    bpy.data.objects["Light"].hide_set(False)
+    bpy.data.objects["Light"].hide_render = False
 
     # Generate 16 different colors per capy
     for i in range(16):
@@ -168,7 +181,7 @@ def main():
         hsv = [
             np.random.beta(a=400, b=400) - 0.48,
             np.random.beta(a=65, b=30),
-            np.random.beta(a=7, b=40),
+            np.random.beta(a=7, b=20),
         ]
         a = choices([1.0, 0.6], [0.95, 0.05])[0]
 
@@ -183,13 +196,31 @@ def main():
 
         base_coat_colors.elements[0].color = (*colorsys.hsv_to_rgb(*hsv), a)
 
-        print(list(hsv))
+        # Generate all possible combinations of accessories
+        for j, acc in enumerate(accessory_sets[0]):
+            acc.hide_set(False)
+            acc.hide_render = False
 
-        # Export the capybara to a GLB
-        capybara.select_set(True)
-        # bpy.ops.export_scene.gltf(filepath=f"out/{capybara.name}_{''.join([str(i) for i in hsv])}.glb", use_selection=True, export_materials="EXPORT")
-        # bpy.ops.wm.save_as_mainfile(filepath="/home/dowlandaiello/hi.blend")
-        # capybara.select_set(False)
+            for k, secondary in enumerate(accessory_sets[1]):
+                secondary.hide_set(False)
+                secondary.hide_render = False
+
+                for l, tertiary in enumerate(accessory_sets[2]):
+                    tertiary.hide_set(False)
+                    tertiary.hide_render = False
+
+                    # Render the capybara
+                    bpy.context.scene.render.filepath = f"/home/dowlandaiello/Downloads/capy_renders/{i}_{j}_{k}_{l}.png"
+                    bpy.ops.render.render(animation=False, use_viewport=False, write_still=True)
+
+                    tertiary.hide_set(True)
+                    tertiary.hide_render = True
+                secondary.hide_set(True)
+                secondary.hide_render = True
+            acc.hide_set(True)
+            acc.hide_render = True
+
+    print(f"DONE (took {time.time() - start})")
 
 # This file cannot be used as a module
 if __name__ == "__main__":
