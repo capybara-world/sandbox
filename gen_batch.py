@@ -39,6 +39,7 @@ def main():
     capybaras = list(filter(
         lambda obj: obj.name == "Base Capybara" or "capybara" in obj.name.lower() and "eye" not in obj.name.lower() and "nose" not in obj.name.lower(), bpy.data.objects
     ))
+    cameras = list(filter(lambda obj : "camera" in obj.name.lower(), bpy.data.objects))
 
     print(f"DONE (took {time.time() - start}s)")
 
@@ -224,9 +225,17 @@ def main():
                     tertiary.hide_set(False)
                     tertiary.hide_render = False
 
-                    # Render the capybara
-                    bpy.context.scene.render.filepath = f"/home/dowlandaiello/Downloads/capy_renders/{i}_{j}_{k}_{l}.png"
-                    bpy.ops.render.render(animation=False, use_viewport=False, write_still=True)
+                    # Render the capybara with all of the available cameras
+                    for cam in cameras:
+                        start = time.time()
+                        print(f"RENDERING WITH CAMERA {cam.name}")
+
+                        bpy.context.scene.camera = cam
+                        bpy.context.scene.render.filepath = f"/home/dowlandaiello/Downloads/capy_renders/{i}_{j}_{k}_{l}/{cam.name}.png"
+
+                        bpy.ops.render.render(animation=False, use_viewport=False, write_still=True)
+
+                        print(f"DONE (took {time.time() - start}s)")
 
                     tertiary.hide_set(True)
                     tertiary.hide_render = True
