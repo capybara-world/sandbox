@@ -196,14 +196,23 @@ def main():
 
         base_coat_colors.elements[0].color = (*colorsys.hsv_to_rgb(*hsv), a)
 
+        start = time.time()
+        print(f"GENERATING HAT COMBINATIONS FOR COLOR {i}")
+
         # Generate all possible combinations of accessories
         for j, acc in enumerate(accessory_sets[0]):
             acc.hide_set(False)
             acc.hide_render = False
 
+            start = time.time()
+            print(f"GENERATING MIDDLE ACC COMBINATIONS FOR HAT {j}")
+
             for k, secondary in enumerate(accessory_sets[1]):
                 secondary.hide_set(False)
                 secondary.hide_render = False
+
+                start = time.time()
+                print(f"GENERATING FINAL ACC COMBINATIONS FOR MIDDLE {k}")
 
                 for l, tertiary in enumerate(accessory_sets[2]):
                     tertiary.hide_set(False)
@@ -219,7 +228,9 @@ def main():
                 secondary.hide_render = True
             acc.hide_set(True)
             acc.hide_render = True
-
+            
+            print(f"DONE (took {time.time() - start})")
+        print(f"DONE (took {time.time() - start})")
     print(f"DONE (took {time.time() - start})")
 
 # This file cannot be used as a module
