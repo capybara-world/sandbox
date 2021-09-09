@@ -176,6 +176,8 @@ def main():
     bpy.data.objects["Light"].hide_set(False)
     bpy.data.objects["Light"].hide_render = False
 
+    wh, ws, wv = colorsys.rgb_to_hsv(*bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value)
+
     # Generate 16 different colors per capy
     for i in range(16):
         # Uniform distribution of colors, but VERY rare translucent capybaras
@@ -224,6 +226,10 @@ def main():
 
                     tertiary.hide_set(False)
                     tertiary.hide_render = False
+
+                    # Vary world hue by .05 between capybara renders
+                    wh = (wh + 0.05) % 1
+                    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (*colorsys.hsv_to_rgb(wh, ws, wv), 1.0)
 
                     # Render the capybara with all of the available cameras
                     for cam in cameras:
