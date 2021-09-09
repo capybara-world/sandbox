@@ -10,12 +10,11 @@ import colorsys
 import os
 
 
-def geo_mesh_center(obj):
-    x, y, z = [sum([v.co[i] for v in obj.data.vertices]) for i in range(3)]
-    count = float(len(obj.data.vertices))
-    center = obj.matrix_world @ (Vector((x, y, z )) / count)
+def geo_mesh_center(o):
+    local_bbox_center = 0.125 * sum((Vector(b) for b in o.bound_box), Vector())
+    global_bbox_center = o.matrix_world @ local_bbox_center
 
-    return center
+    return global_bbox_center
 
 
 # This file cannot be used as a module
@@ -33,7 +32,7 @@ parts = {
     "Base Capybara Eye(left)",
     "Base Capybara Eye(right)",
     "Base Capybara Nose",
-    "Light",
+#    "Light",
 }
 
 capybara = bpy.data.objects["Base Capybara"]
@@ -43,10 +42,8 @@ capybaras = list(filter(
     lambda obj: obj.name == "Base Capybara" or "capybara" in obj.name.lower() and "eye" not in obj.name.lower() and "nose" not in obj.name.lower(), bpy.data.objects
 ))
 
-for obj in bpy.context.selected_objects:
-    obj.select_set(False)
-
 for obj in bpy.data.objects:
+    obj.select_set(False)
     obj.hide_set(obj.name not in parts)
     obj.hide_render = obj.name not in parts
 
@@ -84,6 +81,7 @@ all_accessories = list(
     filter(
         lambda obj: hasattr(obj.data, "polygons")
         and obj.name not in parts
+        and obj.name != "Cylinder"
         and "capybara" not in obj.name.lower()
         and (
             len(obj.data.polygons) != len(eye.data.polygons)
@@ -94,12 +92,16 @@ all_accessories = list(
     )
 )
 
+for obj in all_accessories:
+    obj.hide_set(False)
+
 # The BVH trees of all capybaras, which with an item must intersect in order to be its child
 capy_trees = {}
+capy_geo_pos = {}
 
 for accessory in all_accessories:
     # Determine which capybara the accessory is on
-    most_likely_base = (None, 0.00)
+    most_likely_base = (None, (0, 0.00))
 
     # Find the distance between center of capy geometry and accessory geometry
     bmh = bmesh.new()
@@ -108,6 +110,9 @@ for accessory in all_accessories:
 
     bvh_tree_pre_norm = BVHTree.FromBMesh(bmh)
 
+    # Find the distance between the center of capy geometry and accessory geometry
+    acc_geo_pos = geo_mesh_center(accessory)
+
     for base in capybaras:
         if base not in capy_trees:
             capy_bmh = bmesh.new()
@@ -115,17 +120,21 @@ for accessory in all_accessories:
             capy_bmh.transform(base.matrix_world)
 
             capy_trees[base] = BVHTree.FromBMesh(capy_bmh)
+            capy_geo_pos[base] = geo_mesh_center(base)
 
-        if (likelihood := (bvh_tree_pre_norm.overlap(capy_trees[base]))) < most_likely_base[1] or most_likely_base[0] is None and likelihood > 0:
-            most_likely_base = (base, dist_acc_base)
+        likelihood = len((bvh_tree_pre_norm.overlap(capy_trees[base])))
+        dist = abs((capy_geo_pos[base] - acc_geo_pos).length)
+
+        print(likelihood, dist)
+
+        if likelihood > most_likely_base[1][0] and likelihood > 0 and (dist <= most_likely_base[1][1] or most_likely_base[0] is None):
+            most_likely_base = (base, (likelihood, dist))
 
     # Extraneous objects not part of the capybara accessories
     if most_likely_base[0] is None:
         continue
 
     base = most_likely_base[0]
-
-    print(accessory.name, base.name)
 
     relative_loc = accessory.location[1] - base.location[1]
     accessory_relative_locs[accessory.name] = relative_loc
@@ -139,20 +148,32 @@ for accessory in all_accessories:
     bmh.transform(accessory.matrix_world)
 
     bvh_tree = BVHTree.FromBMesh(bmh)
-    set_overlaps = []
+    set_x_disps = []
+
+    acc_geo_pos = geo_mesh_center(accessory)
 
     # See if this accessory would overlap with an accessory in the set. If so, insert it in that set
-    for i, (crit_tree, acc_set) in enumerate(accessory_sets):
-        if (overlaps := len(bvh_tree.overlap(crit_tree))) > 0:
-            set_overlaps.append((i, overlaps))
+    for i, (pos, acc_set) in enumerate(accessory_sets):
+        displacement = abs(acc_geo_pos[0] - pos[0])
+        set_x_disps.append((i, displacement))
 
-    if len(set_overlaps) == 0:
-        accessory_sets.append((bvh_tree, [accessory.name]))
-    else:
-        print(sorted(set_overlaps, key=lambda item : item[1]))
-        accessory_sets[sorted(set_overlaps, key=lambda item : item[1])[0][0]][1].append(accessory.name)
+    try:
+        closest_set = min(set_x_disps, key=lambda item : item[1])
+        assert closest_set[1] <= 1.00
 
-print(accessory_sets)
+        accessory_sets[closest_set[0]][1].append(accessory.name)
+    except (ValueError, AssertionError) as e:
+        accessory_sets.append((acc_geo_pos, [accessory.name]))
+
+for obj in bpy.data.objects:
+    obj.hide_set(True)
+
+acc_set, set_members = accessory_sets[0]
+
+for accessory in set_members:
+    bpy.data.objects[accessory].hide_set(False)
+
+raise Exception()
 
 for (i, (acc_set, set_members)) in enumerate(accessory_sets):
     for mem in set_members:
@@ -166,7 +187,7 @@ for (i, (acc_set, set_members)) in enumerate(accessory_sets):
         bpy.data.objects[mem].hide_set(True)
         bpy.data.objects[mem].hide_render = True
 
-sys.exit(0)
+raise Exception()
 
 # Generate 16 different colors per capy
 for i in range(16):
@@ -196,3 +217,4 @@ for i in range(16):
     # bpy.ops.export_scene.gltf(filepath=f"out/{capybara.name}_{''.join([str(i) for i in hsv])}.glb", use_selection=True, export_materials="EXPORT")
     # bpy.ops.wm.save_as_mainfile(filepath="/home/dowlandaiello/hi.blend")
     # capybara.select_set(False)
+
