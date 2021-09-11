@@ -19,6 +19,44 @@ def geo_mesh_center(o):
     return global_bbox_center
 
 
+def render_sets(acc_sets, out_path, log_prefix, cameras):
+    for acc_name in acc_sets[0][1]:
+        acc = acc_name and bpy.data.objects[acc_name]
+
+        if acc:
+            acc.hide_set(False)
+            acc.hide_render = False
+
+        # Render at leaf
+        if len(acc_sets) == 1:
+            for cam in cameras:
+                start = time.time()
+                print(f"{log_prefix}RENDERING WITH CAMERA {cam.name}")
+
+                bpy.context.scene.camera = cam
+                bpy.context.scene.render.filepath = f"{out_path}/{cam.name}.png"
+
+                bpy.ops.render.render(
+                    animation=False, use_viewport=False, write_still=True
+                )
+
+                print(f"{log_prefix}DONE (took {time.time() - start}s)")
+        # Continue depth-first traversal
+        else:
+            start = time.time()
+            print(f"{log_prefix}GENERATING COMBINATIONS FOR PARENT {acc_name}")
+
+            render_sets(
+                acc_sets[1:], f"{out_path}/{acc_name}", log_prefix + "\t", cameras
+            )
+
+            print(f"{log_prefix}DONE (took {time.time() - start}s)")
+
+        if acc:
+            acc.hide_set(True)
+            acc.hide_render = True
+
+
 def main():
     seed()
 
@@ -36,10 +74,16 @@ def main():
     capybara = bpy.data.objects["Base Capybara"]
     eye = bpy.data.objects["Base Capybara Eye(left)"]
 
-    capybaras = list(filter(
-        lambda obj: obj.name == "Base Capybara" or "capybara" in obj.name.lower() and "eye" not in obj.name.lower() and "nose" not in obj.name.lower(), bpy.data.objects
-    ))
-    cameras = list(filter(lambda obj : "camera" in obj.name.lower(), bpy.data.objects))
+    capybaras = list(
+        filter(
+            lambda obj: obj.name == "Base Capybara"
+            or "capybara" in obj.name.lower()
+            and "eye" not in obj.name.lower()
+            and "nose" not in obj.name.lower(),
+            bpy.data.objects,
+        )
+    )
+    cameras = list(filter(lambda obj: "camera" in obj.name.lower(), bpy.data.objects))
 
     print(f"DONE (took {time.time() - start}s)")
 
@@ -133,7 +177,9 @@ def main():
 
             dist = abs(capy_geo_pos[base][1] - acc_geo_pos[1])
 
-            if dist <= most_likely_base[1] or (most_likely_base[0] is None and dist < 10.0):
+            if dist <= most_likely_base[1] or (
+                most_likely_base[0] is None and dist < 10.0
+            ):
                 most_likely_base = (base, dist)
 
         # Extraneous objects not part of the capybara accessories
@@ -141,8 +187,6 @@ def main():
             continue
 
         base = most_likely_base[0]
-
-        print(accessory.name, base.name)
 
         relative_loc = acc_geo_pos[1] - capy_geo_pos[base][1]
         accessory_relative_locs[accessory.name] = relative_loc
@@ -155,18 +199,28 @@ def main():
 
         acc_geo_pos = accessory.location
 
+        acc_bmesh = bmesh.new()
+        acc_bmesh.from_mesh(accessory.data)
+        acc_bmesh.transform(accessory.matrix_world)
+
+        acc_tree = BVHTree.FromBMesh(acc_bmesh)
+
         # See if this accessory would overlap with an accessory in the set. If so, insert it in that set
-        for i, (pos, acc_set) in enumerate(accessory_sets):
+        for i, ((pos, crit_tree), acc_set) in enumerate(accessory_sets):
             displacement = abs(acc_geo_pos[0] - pos[0])
+
+            if len(acc_tree.overlap(crit_tree)) == 0:
+                continue
+
             set_x_disps.append((i, displacement))
 
         try:
-            closest_set = min(set_x_disps, key=lambda item : item[1])
+            closest_set = min(set_x_disps, key=lambda item: item[1])
             assert closest_set[1] <= 1.00
 
             accessory_sets[closest_set[0]][1].append(accessory.name)
         except (ValueError, AssertionError):
-            accessory_sets.append((acc_geo_pos, [accessory.name]))
+            accessory_sets.append(((acc_geo_pos, acc_tree), [accessory.name]))
 
     print(f"DONE (took {time.time() - start}s)")
 
@@ -176,7 +230,12 @@ def main():
     bpy.data.objects["Light"].hide_set(False)
     bpy.data.objects["Light"].hide_render = False
 
-    wh, ws, wv = colorsys.rgb_to_hsv(*bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value[:-1])
+    wh, ws, wv = colorsys.rgb_to_hsv(
+        *bpy.data.worlds["World"]
+        .node_tree.nodes["Background"]
+        .inputs[0]
+        .default_value[:-1]
+    )
 
     # Generate 16 different colors per capy
     for i in range(16):
@@ -205,57 +264,16 @@ def main():
         bpy.data.objects["Cylinder"].hide_set(False)
         bpy.data.objects["Cylinder"].hide_render = False
 
-        # Generate all possible combinations of accessories
-        for j, acc_name in enumerate(accessory_sets[0][1]):
-            acc = bpy.data.objects[acc_name]
+        for acc_set in accessory_sets:
+            acc_set[1].append(None)
+            print(len(acc_set[1]))
 
-            acc.hide_set(False)
-            acc.hide_render = False
+        # Generate all possible combinations of accessories. Also generate combinations
+        # WITHOUT each level of accessory
+        render_sets(
+            accessory_sets, "/home/dowlandaiello/Downloads/capy_renders", "", cameras
+        )
 
-            start = time.time()
-            print(f"GENERATING MIDDLE ACC COMBINATIONS FOR HAT {j}")
-
-            for k, secondary_name in enumerate(accessory_sets[1][1]):
-                secondary = bpy.data.objects[secondary_name]
-
-                secondary.hide_set(False)
-                secondary.hide_render = False
-
-                start = time.time()
-                print(f"GENERATING FINAL ACC COMBINATIONS FOR MIDDLE {k}")
-
-                for l, tertiary_name in enumerate(accessory_sets[2][1]):
-                    tertiary = bpy.data.objects[tertiary_name]
-
-                    tertiary.hide_set(False)
-                    tertiary.hide_render = False
-
-                    # Vary world hue by .05 between capybara renders
-                    wh = (wh + 0.05) % 1
-                    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (*colorsys.hsv_to_rgb(wh, ws, wv), 1.0)
-
-                    # Render the capybara with all of the available cameras
-                    for cam in cameras:
-                        start = time.time()
-                        print(f"RENDERING WITH CAMERA {cam.name}")
-
-                        bpy.context.scene.camera = cam
-                        bpy.context.scene.render.filepath = f"/home/dowlandaiello/Downloads/capy_renders/{i}_{j}_{k}_{l}/{cam.name}.png"
-
-                        bpy.ops.render.render(animation=False, use_viewport=False, write_still=True)
-
-                        print(f"DONE (took {time.time() - start}s)")
-
-                    tertiary.hide_set(True)
-                    tertiary.hide_render = True
-                secondary.hide_set(True)
-                secondary.hide_render = True
-            acc.hide_set(True)
-            acc.hide_render = True
-            
-            print(f"DONE (took {time.time() - start})")
-        print(f"DONE (took {time.time() - start})")
-    print(f"DONE (took {time.time() - start})")
 
 # This file cannot be used as a module
 if __name__ == "__main__":
