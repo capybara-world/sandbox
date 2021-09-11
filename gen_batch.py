@@ -12,6 +12,28 @@ import colorsys
 import os
 
 
+def obj_primary_material(obj):
+    """
+    Determines the primary material of an object based on the number of its occurrences on the object.
+    """
+    material_occurrences = {}
+    most_common, most_occ = None, 0
+
+    for f in obj.data.polygons:
+        mat_idx = f.material_index
+
+        if mat_idx not in material_occurrences:
+            material_occurrences[mat_idx] = 0
+
+        material_occurrences[mat_idx] += 1
+
+        if (curr_occ := material_occurrences[mat_idx]) > most_occ:
+            most_occ = curr_occ
+            most_common = mat_idx
+
+    return most_common
+
+
 def geo_mesh_center(o):
     local_bbox_center = 0.125 * sum((Vector(b) for b in o.bound_box), Vector())
     global_bbox_center = o.matrix_world @ local_bbox_center
@@ -108,20 +130,7 @@ def main():
     # BEGIN BASE COAT COLOR RANDOMIZATION
 
     # Calculate the most common material to find the fur material
-    material_occurrences = {}
-    most_common, most_occ = None, 0
-
-    for f in capybara.data.polygons:
-        mat_idx = f.material_index
-
-        if mat_idx not in material_occurrences:
-            material_occurrences[mat_idx] = 0
-
-        material_occurrences[mat_idx] += 1
-
-        if (curr_occ := material_occurrences[mat_idx]) > most_occ:
-            most_occ = curr_occ
-            most_common = mat_idx
+    most_common = obj_primary_material(capybara)
 
     base_coat_colors = (
         capybara.material_slots[most_common]
