@@ -238,11 +238,11 @@ def main():
 
         base = most_likely_base[0]
 
-        relative_loc = acc_geo_pos[1] - capy_geo_pos[base][1]
+        relative_loc = acc_geo_pos - capy_geo_pos[base]
         accessory_relative_locs[accessory.name] = relative_loc
 
         # Re-position the accessory
-        accessory.location.y = capybara.location[1] + relative_loc
+        accessory.location = capybara.location + relative_loc
         bpy.context.view_layer.update()
 
         set_x_disps = []
@@ -259,7 +259,10 @@ def main():
         for i, ((pos, crit_tree), acc_set) in enumerate(accessory_sets):
             displacement = abs(acc_geo_pos[0] - pos[0])
 
-            if len(acc_tree.overlap(crit_tree)) == 0:
+            if (
+                len(acc_tree.overlap(crit_tree)) == 0
+                and abs((acc_geo_pos - pos).length) > 0.5
+            ):
                 continue
 
             set_x_disps.append((i, displacement))
