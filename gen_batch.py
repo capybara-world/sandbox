@@ -44,7 +44,6 @@ def geo_mesh_center(o):
 
 
 def render_sets(acc_sets, out_path, log_prefix, cameras):
-    print(len(acc_sets))
     for acc_name in acc_sets[0][1]:
         acc = acc_name and bpy.data.objects[acc_name]
         mat = acc and obj_primary_material(acc)
