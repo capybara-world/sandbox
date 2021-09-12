@@ -11,6 +11,8 @@ from mathutils import Vector
 import colorsys
 import os
 
+N_COAT_COLOR_SAMPLES, N_ACC_COLOR_SAMPLES = 16, 32
+
 
 def obj_primary_material(obj):
     """
@@ -42,41 +44,80 @@ def geo_mesh_center(o):
 
 
 def render_sets(acc_sets, out_path, log_prefix, cameras):
+    print(len(acc_sets))
     for acc_name in acc_sets[0][1]:
         acc = acc_name and bpy.data.objects[acc_name]
+        mat = acc and obj_primary_material(acc)
 
-        if acc:
-            acc.hide_set(False)
-            acc.hide_render = False
+        node_orig_colors = {}
 
-        # Render at leaf
-        if len(acc_sets) == 1:
-            for cam in cameras:
+        for i in range(N_ACC_COLOR_SAMPLES + 1):
+            # Change the color of the accessory
+            if mat:
+                for node in acc.material_slots[mat].material.node_tree.nodes:
+                    # All accessories have a BSDF, but nothing else to vary
+                    if node.name != "Principled BSDF":
+                        continue
+
+                    # Allow one pass with default material
+                    if i == 0:
+                        node_orig_colors[node] = node.inputs["Base Color"].default_value
+
+                        continue
+
+                    hsvoff = (
+                        np.random.beta(a=50, b=50) - 0.5,
+                        np.random.beta(a=100, b=100) - 0.5,
+                        np.random.beta(a=100, b=100) - 0.5,
+                    )
+                    alpha = np.random.beta(a=20, b=1)
+                    hsv = colorsys.rgb_to_hsv(
+                        *[
+                            orig + hsvoff
+                            for orig, hsvoff in zip(node_orig_colors[node][:-1], hsvoff)
+                        ]
+                    )
+
+                    node.inputs["Base Color"].default_value = (
+                        *colorsys.hsv_to_rgb(*hsv),
+                        alpha,
+                    )
+
+            if acc:
+                acc.hide_set(False)
+                acc.hide_render = False
+
+            # Render at leaf
+            if len(acc_sets) == 1:
+                print(f"{log_prefix}RENDERING")
+
+                for cam in cameras:
+                    start = time.time()
+                    print(f"{log_prefix}RENDERING WITH CAMERA {cam.name}")
+
+                    bpy.context.scene.camera = cam
+                    bpy.context.scene.render.filepath = f"{out_path}/{cam.name}.png"
+
+                    bpy.ops.render.render(
+                        animation=False, use_viewport=False, write_still=True
+                    )
+
+                    print(f"{log_prefix}DONE (took {time.time() - start}s)")
+            # Continue depth-first traversal
+            else:
                 start = time.time()
-                print(f"{log_prefix}RENDERING WITH CAMERA {cam.name}")
+                print(f"{log_prefix}GENERATING COMBINATIONS FOR PARENT {acc_name}")
 
-                bpy.context.scene.camera = cam
-                bpy.context.scene.render.filepath = f"{out_path}/{cam.name}.png"
-
-                bpy.ops.render.render(
-                    animation=False, use_viewport=False, write_still=True
+                # Generate combinations + different colors
+                render_sets(
+                    acc_sets[1:], f"{out_path}/{acc_name}", log_prefix + "\t", cameras
                 )
 
                 print(f"{log_prefix}DONE (took {time.time() - start}s)")
-        # Continue depth-first traversal
-        else:
-            start = time.time()
-            print(f"{log_prefix}GENERATING COMBINATIONS FOR PARENT {acc_name}")
 
-            render_sets(
-                acc_sets[1:], f"{out_path}/{acc_name}", log_prefix + "\t", cameras
-            )
-
-            print(f"{log_prefix}DONE (took {time.time() - start}s)")
-
-        if acc:
-            acc.hide_set(True)
-            acc.hide_render = True
+            if acc:
+                acc.hide_set(True)
+                acc.hide_render = True
 
 
 def main():
@@ -247,7 +288,7 @@ def main():
     )
 
     # Generate 16 different colors per capy
-    for i in range(16):
+    for i in range(N_COAT_COLOR_SAMPLES):
         # Uniform distribution of colors, but VERY rare translucent capybaras
         hsv = [
             np.random.beta(a=400, b=400) - 0.48,
@@ -257,8 +298,6 @@ def main():
         a = choices([1.0, 0.6], [0.95, 0.05])[0]
 
         base_coat_colors.elements[1].color = (*colorsys.hsv_to_rgb(*hsv), a)
-
-        print(list(hsv))
 
         # All animals have a difuse
 
@@ -272,10 +311,6 @@ def main():
 
         bpy.data.objects["Cylinder"].hide_set(False)
         bpy.data.objects["Cylinder"].hide_render = False
-
-        for acc_set in accessory_sets:
-            acc_set[1].append(None)
-            print(len(acc_set[1]))
 
         # Generate all possible combinations of accessories. Also generate combinations
         # WITHOUT each level of accessory
