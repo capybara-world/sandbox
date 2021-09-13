@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import sys
+import json
 import bpy, bmesh
 from threading import Thread
 import time
@@ -12,6 +13,12 @@ import colorsys
 import os
 
 N_COAT_COLOR_SAMPLES, N_ACC_COLOR_SAMPLES = 16, 32
+FUR_COLOR_DIST, ACC_COLOR_DIST = ((400, 400), (65, 30), (7, 20)), (
+    (50, 50),
+    (100, 100),
+    (100, 100),
+    (20, 1),
+)
 
 
 def obj_primary_material(obj):
@@ -43,7 +50,9 @@ def geo_mesh_center(o):
     return global_bbox_center
 
 
-def render_sets(acc_sets, out_path, log_prefix, cameras):
+def render_sets(
+    acc_sets, out_path, log_prefix, cameras, fur_color_dist, acc_color_dist
+):
     for acc_name in acc_sets[0][1]:
         acc = acc_name and bpy.data.objects[acc_name]
         mat = acc and obj_primary_material(acc)
@@ -65,11 +74,16 @@ def render_sets(acc_sets, out_path, log_prefix, cameras):
                         continue
 
                     hsvoff = (
-                        np.random.beta(a=50, b=50) - 0.5,
-                        np.random.beta(a=100, b=100) - 0.5,
-                        np.random.beta(a=100, b=100) - 0.5,
+                        np.random.beta(a=acc_color_dist[0][0], b=acc_color_dist[0][1])
+                        - 0.5,
+                        np.random.beta(a=acc_color_dist[1][0], b=acc_color_dist[1][1])
+                        - 0.5,
+                        np.random.beta(a=acc_color_dist[2][0], b=acc_color_dist[2][1])
+                        - 0.5,
                     )
-                    alpha = np.random.beta(a=20, b=1)
+                    alpha = np.random.beta(
+                        a=acc_color_dist[3][0], b=acc_color_dist[3][1]
+                    )
                     hsv = colorsys.rgb_to_hsv(
                         *[
                             orig + hsvoff
@@ -109,7 +123,12 @@ def render_sets(acc_sets, out_path, log_prefix, cameras):
 
                 # Generate combinations + different colors
                 render_sets(
-                    acc_sets[1:], f"{out_path}/{acc_name}", log_prefix + "\t", cameras
+                    acc_sets[1:],
+                    f"{out_path}/{acc_name}",
+                    log_prefix + "\t",
+                    cameras,
+                    fur_color_dist,
+                    acc_color_dist,
                 )
 
                 print(f"{log_prefix}DONE (took {time.time() - start}s)")
@@ -120,6 +139,14 @@ def render_sets(acc_sets, out_path, log_prefix, cameras):
 
 
 def main():
+    assert len(sys.argv) == 2, "A JSON config file path must be provided"
+
+    # Determine values for beta curves used in randomness from a config
+    fur_color_dist, acc_color_dist = None, None
+
+    with open(sys.argv[1]) as f:
+        fur_color_dist, acc_color_dist = json.load(f).values()
+
     seed()
 
     start = time.time()
@@ -293,9 +320,9 @@ def main():
     for i in range(N_COAT_COLOR_SAMPLES):
         # Uniform distribution of colors, but VERY rare translucent capybaras
         hsv = [
-            np.random.beta(a=400, b=400) - 0.48,
-            np.random.beta(a=65, b=30),
-            np.random.beta(a=7, b=20),
+            np.random.beta(a=fur_color_dist[0][0], b=fur_color_dist[0][1]) - 0.48,
+            np.random.beta(a=fur_color_dist[1][0], b=fur_color_dist[1][1]),
+            np.random.beta(a=fur_color_dist[2][0], b=fur_color_dist[2][1]),
         ]
         a = choices([1.0, 0.6], [0.95, 0.05])[0]
 
