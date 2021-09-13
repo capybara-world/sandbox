@@ -13,12 +13,6 @@ import colorsys
 import os
 
 N_COAT_COLOR_SAMPLES, N_ACC_COLOR_SAMPLES = 16, 32
-FUR_COLOR_DIST, ACC_COLOR_DIST = ((400, 400), (65, 30), (7, 20)), (
-    (50, 50),
-    (100, 100),
-    (100, 100),
-    (20, 1),
-)
 
 
 def obj_primary_material(obj):
@@ -139,12 +133,12 @@ def render_sets(
 
 
 def main():
-    assert len(sys.argv) == 2, "A JSON config file path must be provided"
+    assert ".json" in sys.argv[-1], "A JSON config file path must be provided"
 
     # Determine values for beta curves used in randomness from a config
     fur_color_dist, acc_color_dist = None, None
 
-    with open(sys.argv[1]) as f:
+    with open(sys.argv[-1]) as f:
         fur_color_dist, acc_color_dist = json.load(f).values()
 
     seed()
@@ -344,7 +338,12 @@ def main():
         # Generate all possible combinations of accessories. Also generate combinations
         # WITHOUT each level of accessory
         render_sets(
-            accessory_sets, "/home/dowlandaiello/Downloads/capy_renders", "", cameras
+            accessory_sets,
+            "/home/dowlandaiello/Downloads/capy_renders",
+            "",
+            cameras,
+            fur_color_dist,
+            acc_color_dist,
         )
 
 
