@@ -7,6 +7,7 @@ from threading import Thread
 import time
 import numpy as np
 from random import choices, seed, uniform
+from math import ceil
 from mathutils.bvhtree import BVHTree
 from mathutils import Vector
 import colorsys
@@ -45,21 +46,21 @@ def geo_mesh_center(o):
 
 
 def render_sets(
-    acc_sets, out_path, log_prefix, cameras, fur_color_dist, acc_color_dist
+    acc_sets, out_path, log_prefix, cameras, fur_color_dist, acc_color_dist, n_mats_randomized_dist
 ):
     for acc_name in acc_sets[0][1]:
         acc = acc_name and bpy.data.objects[acc_name]
-        mat = acc and obj_primary_material(acc)
 
         node_orig_colors = {}
 
         for i in range(N_ACC_COLOR_SAMPLES + 1):
+            n_mats_randomizable = ceil(np.random.beta(a=n_mats_randomized_dist[0], b=n_mats_randomized_dist[1]) * len(acc.material_slots))
+
             # Change the color of the accessory
-            if mat:
-                for node in acc.material_slots[mat].material.node_tree.nodes:
+            for mat in acc.material_slots[:n_mats_randomizable]:
+                if "Principled BSDF" in mat.material.node_tree.nodes:
                     # All accessories have a BSDF, but nothing else to vary
-                    if node.name != "Principled BSDF":
-                        continue
+                    node = mat.material.node_tree.nodes["Principled BSDF"]
 
                     # Allow one pass with default material
                     if i == 0:
@@ -90,56 +91,58 @@ def render_sets(
                         alpha,
                     )
 
-            if acc:
-                acc.hide_set(False)
-                acc.hide_render = False
+                if acc:
+                    acc.hide_set(False)
+                    acc.hide_render = False
 
-            # Render at leaf
-            if len(acc_sets) == 1:
-                print(f"{log_prefix}RENDERING")
 
-                for cam in cameras:
+                # Render at leaf
+                if len(acc_sets) == 1:
+                    print(f"{log_prefix}RENDERING")
+
+                    for cam in cameras:
+                        start = time.time()
+                        print(f"{log_prefix}RENDERING WITH CAMERA {cam.name}")
+
+                        bpy.context.scene.camera = cam
+                        bpy.context.scene.render.filepath = f"{out_path}/color_{i}/{cam.name}.png"
+
+                        bpy.ops.render.render(
+                            animation=False, use_viewport=False, write_still=True
+                        )
+
+                        print(f"{log_prefix}DONE (took {time.time() - start}s)")
+                # Continue depth-first traversal
+                else:
                     start = time.time()
-                    print(f"{log_prefix}RENDERING WITH CAMERA {cam.name}")
+                    print(f"{log_prefix}GENERATING COMBINATIONS FOR PARENT {acc_name}")
 
-                    bpy.context.scene.camera = cam
-                    bpy.context.scene.render.filepath = f"{out_path}/{cam.name}.png"
-
-                    bpy.ops.render.render(
-                        animation=False, use_viewport=False, write_still=True
+                    # Generate combinations + different colors
+                    render_sets(
+                        acc_sets[1:],
+                        f"{out_path}/{acc_name}",
+                        log_prefix + "\t",
+                        cameras,
+                        fur_color_dist,
+                        acc_color_dist,
+                        n_mats_randomized_dist
                     )
 
                     print(f"{log_prefix}DONE (took {time.time() - start}s)")
-            # Continue depth-first traversal
-            else:
-                start = time.time()
-                print(f"{log_prefix}GENERATING COMBINATIONS FOR PARENT {acc_name}")
 
-                # Generate combinations + different colors
-                render_sets(
-                    acc_sets[1:],
-                    f"{out_path}/{acc_name}",
-                    log_prefix + "\t",
-                    cameras,
-                    fur_color_dist,
-                    acc_color_dist,
-                )
-
-                print(f"{log_prefix}DONE (took {time.time() - start}s)")
-
-            if acc:
-                acc.hide_set(True)
-                acc.hide_render = True
+                if acc:
+                    acc.hide_set(True)
+                    acc.hide_render = True
 
 
 def main():
     assert ".json" in sys.argv[-1], "A JSON config file path must be provided"
 
     # Determine values for beta curves used in randomness from a config
-    fur_color_dist, acc_color_dist = None, None
+    fur_color_dist, acc_color_dist, n_mats_randomized_dist = None, None, None
 
     with open(sys.argv[-1]) as f:
-        fur_color_dist, acc_color_dist = json.load(f).values()
+        fur_color_dist, acc_color_dist, n_mats_randomized_dist = json.load(f).values()
 
     seed()
 
@@ -344,6 +347,7 @@ def main():
             cameras,
             fur_color_dist,
             acc_color_dist,
+            n_mats_randomized_dist
         )
 
 
